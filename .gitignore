@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output directories
+output/
+smoke_test/
+results/
+checkpoints/
+
+# Temporary files
+*.npy
+*.log
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+smoke_*.png
+config_test.yaml
+
+# Large data files (>2GB, exceeds GitHub LFS limit)
+# Store these externally (Zenodo, institutional repository, etc.)
+projections.raw
+projections.mhd
