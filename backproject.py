@@ -63,6 +63,7 @@ def backproject(
     volume_shape: Tuple[int, int, int],
     voxel_spacing: Tuple[float, float, float],
     volume_origin: Tuple[float, float, float],
+    logger=None,
 ) -> np.ndarray:
     """
     Reconstruct a 3D volume in the rodent frame using voxel-driven backprojection.
@@ -80,12 +81,18 @@ def backproject(
         Spacing between voxels in mm (sx, sy, sz).
     volume_origin : tuple[float, float, float]
         Coordinates (in mm) of the first voxel corner in world space.
+    logger : logging.Logger, optional
+        Logger for progress reporting. If None, no logging.
     
     Returns
     -------
     np.ndarray
         Reconstructed volume, shape `volume_shape`, dtype float32.
     """
+    
+    import logging
+    if logger is None:
+        logger = logging.getLogger(__name__)
     
     # 1. Initialize output volume
     volume = np.zeros(volume_shape, dtype=np.float32)
@@ -98,10 +105,22 @@ def backproject(
     # Get detector dimensions
     n_projections, nu, nv = projections.shape
     
+    logger.info(f"  Starting backprojection loop with {nx}×{ny}×{nz} voxels and {n_projections} projections")
+    
     # 2. Loop over voxels in the rodent frame
+    total_voxels = nx * ny * nz
+    voxel_count = 0
+    
     for iz in range(nz):
         for iy in range(ny):
             for ix in range(nx):
+                voxel_count += 1
+                
+                # Log progress every 10% or every 100k voxels (whichever is less frequent)
+                if voxel_count % max(total_voxels // 10, 100000) == 0:
+                    progress_pct = 100.0 * voxel_count / total_voxels
+                    logger.info(f"    Progress: {voxel_count:,}/{total_voxels:,} voxels ({progress_pct:.1f}%)")
+                
                 # Compute voxel center in world coordinates
                 x = ox + (ix + 0.5) * sx
                 y = oy + (iy + 0.5) * sy
@@ -124,10 +143,14 @@ def backproject(
                         volume[ix, iy, iz] += value
                         accumulator[ix, iy, iz] += 1.0
     
+    logger.info(f"    Progress: {total_voxels:,}/{total_voxels:,} voxels (100.0%)")
+    
     # 4. Normalization: divide by number of contributing projections
     # Avoid division by zero
     mask = accumulator > 0
     volume[mask] /= accumulator[mask]
+    
+    logger.info(f"  Backprojection normalization complete")
     
     # 5. Return reconstructed volume
     return volume

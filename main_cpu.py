@@ -6,6 +6,7 @@ from backproject.py, projector.py, and geometry.py.
 """
 
 import argparse
+import logging
 import time
 from pathlib import Path
 
@@ -16,6 +17,47 @@ import yaml
 
 from backproject import backproject
 from geometry import load_geometry_from_yaml
+
+
+def setup_logging(output_dir: Path):
+    """
+    Set up logging to both file and console.
+    
+    Parameters
+    ----------
+    output_dir : Path
+        Directory where log file will be saved.
+    """
+    log_file = output_dir / "reconstruction.log"
+    
+    # Create logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Remove existing handlers
+    logger.handlers = []
+    
+    # File handler
+    fh = logging.FileHandler(log_file)
+    fh.setLevel(logging.DEBUG)
+    
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    
+    # Formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    
+    # Add handlers to logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    
+    return logger
 
 
 def load_projections_mhd(mhd_path: str) -> np.ndarray:
@@ -161,14 +203,19 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
     
-    print("=" * 80)
-    print("SARRP CBCT CPU Reconstruction (using backproject.py)")
-    print("=" * 80)
-    print("⚠ CPU mode: Using pure Python backprojection from backproject.backproject()")
-    print()
+    # Setup logging
+    logger = setup_logging(output_dir)
+    
+    logger.info("=" * 80)
+    logger.info("SARRP CBCT CPU Reconstruction (using backproject.py)")
+    logger.info("=" * 80)
+    logger.warning("CPU mode: Using pure Python backprojection from backproject.backproject()")
+    logger.info("")
     
     # 1. Load geometry and configuration
-    print("Step 1: Loading geometry...")
+    logger.info("Step 1: Loading geometry...")
+    t_step_start = time.time()
+    
     geom = load_geometry_from_yaml(args.config)
     
     with open(args.config, "r") as f:
@@ -185,29 +232,34 @@ def main():
         -volume_dims[2] * voxel_spacing[2] / 2,
     )
     
-    print(f"  Geometry: SOD={geom.SOD:.2f} mm, SDD={geom.SDD:.2f} mm, IDD={geom.IDD:.2f} mm")
-    print(f"  Detector: {geom.det_nu} × {geom.det_nv} pixels")
-    print(f"  Projections: {geom.n_projections} angles from {geom.angle_start_deg}° to {geom.angle_end_deg}°")
-    print(f"  Volume: {volume_dims} voxels, spacing={voxel_spacing} mm")
-    print(f"  Volume origin: {volume_origin} mm")
-    print()
+    logger.info(f"  Geometry: SOD={geom.SOD:.2f} mm, SDD={geom.SDD:.2f} mm, IDD={geom.IDD:.2f} mm")
+    logger.info(f"  Detector: {geom.det_nu} × {geom.det_nv} pixels")
+    logger.info(f"  Projections: {geom.n_projections} angles from {geom.angle_start_deg}° to {geom.angle_end_deg}°")
+    logger.info(f"  Volume: {volume_dims} voxels, spacing={voxel_spacing} mm")
+    logger.info(f"  Volume origin: {volume_origin} mm")
+    logger.info(f"  Step 1 completed in {time.time() - t_step_start:.2f}s")
+    logger.info("")
     
     # 2. Load projections
-    print("Step 2: Loading projections...")
+    logger.info("Step 2: Loading projections...")
+    t_step_start = time.time()
+    
     projections = load_projections_mhd(args.projections)
-    print()
+    logger.info(f"  Step 2 completed in {time.time() - t_step_start:.2f}s")
+    logger.info("")
     
     # Verify dimensions match
     n_proj, nu, nv = projections.shape
     if n_proj != geom.n_projections:
-        print(f"⚠ Warning: Number of projections in data ({n_proj}) != config ({geom.n_projections})")
+        logger.warning(f"Number of projections in data ({n_proj}) != config ({geom.n_projections})")
     if nu != geom.det_nu or nv != geom.det_nv:
-        print(f"⚠ Warning: Detector size mismatch: data=({nu}, {nv}), config=({geom.det_nu}, {geom.det_nv})")
+        logger.warning(f"Detector size mismatch: data=({nu}, {nv}), config=({geom.det_nu}, {geom.det_nv})")
     
     # 3. Run reconstruction using backproject() from backproject.py
-    print("Step 3: Running backprojection...")
-    print(f"  Processing {n_proj} projections using backproject.backproject()...")
-    print(f"  Reconstructing volume of shape {volume_dims}...")
+    logger.info("Step 3: Running backprojection...")
+    logger.info(f"  Processing {n_proj} projections using backproject.backproject()...")
+    logger.info(f"  Reconstructing volume of shape {volume_dims}...")
+    logger.info(f"  Total voxels to process: {volume_dims[0] * volume_dims[1] * volume_dims[2]:,}")
     
     t_start = time.time()
     
@@ -217,21 +269,23 @@ def main():
         volume_shape=volume_dims,
         voxel_spacing=voxel_spacing,
         volume_origin=volume_origin,
+        logger=logger,
     )
     
     t_elapsed = time.time() - t_start
     
-    print(f"  ✓ Reconstruction complete in {t_elapsed:.2f} seconds")
-    print()
+    logger.info(f"  ✓ Reconstruction complete in {t_elapsed:.2f} seconds ({t_elapsed/60:.2f} minutes)")
+    logger.info(f"  Performance: {volume_dims[0] * volume_dims[1] * volume_dims[2] / t_elapsed:.0f} voxels/sec")
+    logger.info("")
     
     # 4. Print diagnostics
-    print("Step 4: Volume statistics")
-    print(f"  Shape: {volume.shape}")
-    print(f"  Data type: {volume.dtype}")
-    print(f"  Min:  {volume.min():.6f}")
-    print(f"  Max:  {volume.max():.6f}")
-    print(f"  Mean: {volume.mean():.6f}")
-    print(f"  Std:  {volume.std():.6f}")
+    logger.info("Step 4: Volume statistics")
+    logger.info(f"  Shape: {volume.shape}")
+    logger.info(f"  Data type: {volume.dtype}")
+    logger.info(f"  Min:  {volume.min():.6f}")
+    logger.info(f"  Max:  {volume.max():.6f}")
+    logger.info(f"  Mean: {volume.mean():.6f}")
+    logger.info(f"  Std:  {volume.std():.6f}")
     
     # Find maximum voxel
     max_idx = np.unravel_index(np.argmax(volume), volume.shape)
@@ -240,17 +294,18 @@ def main():
         volume_origin[1] + (max_idx[1] + 0.5) * voxel_spacing[1],
         volume_origin[2] + (max_idx[2] + 0.5) * voxel_spacing[2],
     )
-    print(f"  Max value location:")
-    print(f"    Voxel index: {max_idx}")
-    print(f"    World coords: ({max_coords[0]:.2f}, {max_coords[1]:.2f}, {max_coords[2]:.2f}) mm")
-    print()
+    logger.info(f"  Max value location:")
+    logger.info(f"    Voxel index: {max_idx}")
+    logger.info(f"    World coords: ({max_coords[0]:.2f}, {max_coords[1]:.2f}, {max_coords[2]:.2f}) mm")
+    logger.info("")
     
     # 5. Save outputs
-    print("Step 5: Saving results...")
+    logger.info("Step 5: Saving results...")
+    t_step_start = time.time()
     
     # Save as NumPy
     np.save(output_dir / "recon_volume.npy", volume)
-    print(f"  Saved: recon_volume.npy")
+    logger.info(f"  Saved: recon_volume.npy")
     
     # Save as MHD
     save_volume_mhd(
@@ -262,11 +317,12 @@ def main():
     
     # Save slices
     save_slices(volume, output_dir, prefix="recon")
-    print()
+    logger.info(f"  Step 5 completed in {time.time() - t_step_start:.2f}s")
+    logger.info("")
     
-    print("=" * 80)
-    print(f"✓ Reconstruction complete! Results saved to: {output_dir}")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info(f"✓ Reconstruction complete! Results saved to: {output_dir}")
+    logger.info("=" * 80)
 
 
 if __name__ == "__main__":

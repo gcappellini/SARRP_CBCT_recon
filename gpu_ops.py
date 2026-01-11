@@ -6,6 +6,7 @@ Falls back to CPU (NumPy) if CUDA is not available.
 """
 
 from typing import Tuple, Union
+import logging
 
 import numpy as np
 
@@ -202,6 +203,7 @@ def backproject_gpu(
     voxel_spacing: Tuple[float, float, float],
     volume_origin: Tuple[float, float, float],
     use_gpu: bool = True,
+    logger=None,
 ) -> np.ndarray:
     """
     GPU-accelerated voxel-driven backprojection.
@@ -220,12 +222,17 @@ def backproject_gpu(
         Volume origin in mm.
     use_gpu : bool, optional
         If True, use GPU. If False, use CPU. Default True.
+    logger : logging.Logger, optional
+        Logger for progress reporting. If None, no logging.
     
     Returns
     -------
     ndarray[nx, ny, nz]
         Reconstructed volume on CPU.
     """
+    
+    if logger is None:
+        logger = logging.getLogger(__name__)
     
     # Select array module
     xp = cp if (use_gpu and CUPY_AVAILABLE) else np
@@ -240,6 +247,8 @@ def backproject_gpu(
     sx, sy, sz = voxel_spacing
     ox, oy, oz = volume_origin
     n_projections, nu, nv = projections.shape
+    
+    logger.info(f"  Starting GPU backprojection with {nx}×{ny}×{nz} voxels and {n_projections} projections")
     
     # Allocate volume and accumulator on GPU
     volume = xp.zeros(volume_shape, dtype=xp.float32)
@@ -260,6 +269,11 @@ def backproject_gpu(
     
     # Process each angle
     for angle_idx in range(n_projections):
+        # Log progress every 10% or at least every 5 projections
+        if (angle_idx + 1) % max(max(n_projections // 10, 1), 5) == 0 or angle_idx == 0:
+            progress_pct = 100.0 * (angle_idx + 1) / n_projections
+            logger.info(f"    Progress: {angle_idx + 1}/{n_projections} projections ({progress_pct:.1f}%)")
+        
         # Project all voxel centers to detector
         u, v = world_to_detector_batch(points_world, angle_idx, geom)
         
@@ -280,9 +294,14 @@ def backproject_gpu(
         volume = volume_flat.reshape(volume_shape)
         accumulator = accumulator_flat.reshape(volume_shape)
     
+    logger.info(f"    Progress: {n_projections}/{n_projections} projections (100.0%)")
+    logger.info(f"  Normalizing volume...")
+    
     # Normalize
     mask = accumulator > 0
     volume[mask] /= accumulator[mask]
+    
+    logger.info(f"  GPU backprojection normalization complete")
     
     # Move back to CPU
     if use_gpu and CUPY_AVAILABLE:
