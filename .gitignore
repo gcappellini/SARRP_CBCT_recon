@@ -46,3 +46,9 @@ config_test.yaml
 # Store these externally (Zenodo, institutional repository, etc.)
 projections.raw
 projections.mhd
+
+*.raw
+*.mhd
+
+output_1001/*.raw
+output_1001/*.mhd
