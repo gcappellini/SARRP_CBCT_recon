@@ -52,3 +52,6 @@ projections.mhd
 
 output_1001/*.raw
 output_1001/*.mhd
+
+output_wrong_preproc/*.raw
+output_wrong_preproc/*.mhd
