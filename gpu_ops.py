@@ -237,16 +237,29 @@ def backproject_gpu(
     # Select array module
     xp = cp if (use_gpu and CUPY_AVAILABLE) else np
     
-    # Move projections to GPU if needed
-    if use_gpu and CUPY_AVAILABLE:
-        projections = cp.asarray(projections, dtype=cp.float32)
-    else:
-        projections = np.asarray(projections, dtype=np.float32)
-    
+    # Determine whether projections is a callable provider
+    is_callable = callable(projections)
+
+    # If projections is a full array, move it to device if requested
+    if not is_callable:
+        if use_gpu and CUPY_AVAILABLE:
+            projections = cp.asarray(projections, dtype=cp.float32)
+        else:
+            projections = np.asarray(projections, dtype=np.float32)
+
     nx, ny, nz = volume_shape
     sx, sy, sz = voxel_spacing
     ox, oy, oz = volume_origin
-    n_projections, nu, nv = projections.shape
+
+    # Determine number of projections and detector size
+    if is_callable:
+        # Use geometry to get number of projections; probe first projection for shape
+        n_projections = int(geom.n_projections)
+        sample = projections(0)
+        sample = np.asarray(sample, dtype=np.float32)
+        nu, nv = sample.shape
+    else:
+        n_projections, nu, nv = projections.shape
     
     logger.info(f"  Starting GPU backprojection with {nx}×{ny}×{nz} voxels and {n_projections} projections")
     
@@ -281,7 +294,17 @@ def backproject_gpu(
         in_bounds = (u >= 0) & (u < nu) & (v >= 0) & (v < nv)
         
         # Sample projection at valid (u, v)
-        sample_values = bilinear_interpolate_gpu(projections[angle_idx], u, v)
+        if is_callable:
+            # Get single filtered projection from provider (CPU ndarray expected)
+            proj_img = projections(angle_idx)
+            if use_gpu and CUPY_AVAILABLE:
+                proj_img = cp.asarray(proj_img, dtype=cp.float32)
+            else:
+                proj_img = np.asarray(proj_img, dtype=np.float32)
+
+            sample_values = bilinear_interpolate_gpu(proj_img, u, v)
+        else:
+            sample_values = bilinear_interpolate_gpu(projections[angle_idx], u, v)
         sample_values = sample_values * in_bounds.astype(xp.float32)
         
         # Accumulate into volume

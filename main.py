@@ -298,30 +298,37 @@ def main():
     
     t_start = time.time()
 
-    # Preprocess: apply 1D ramp (Ram-Lak) filter along detector u-axis
-    logger.info("  Applying Ramp (Ram-Lak) filter to projections...")
-    projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=use_gpu)
+    # If using GPU for backprojection, stream CPU-filtered projections per-angle
+    if use_gpu:
+        logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
+        # Create a CPU-only per-angle provider that filters a single projection on request
+        from preprocessing import make_cpu_projection_provider
 
-    # Validate filtered projections shape
-    try:
-        ndim = projections.ndim
-    except Exception:
-        logger.error("Filtered projections object has no ndim attribute")
-        raise
+        provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0])
 
-    if ndim != 3:
-        logger.error(f"Filtered projections must be 3D (n_proj, nu, nv), got ndim={ndim}")
-        raise ValueError("Filtered projections must be 3D (n_proj, nu, nv)")
+        volume = backproject_gpu(
+            projections=provider,
+            geom=geom,
+            volume_shape=volume_dims,
+            voxel_spacing=voxel_spacing,
+            volume_origin=volume_origin,
+            use_gpu=use_gpu,
+            logger=logger,
+        )
+    else:
+        # CPU-only path: filter entire stack on CPU and run CPU backproject (no GPU)
+        logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
+        projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False)
 
-    volume = backproject_gpu(
-        projections=projections,
-        geom=geom,
-        volume_shape=volume_dims,
-        voxel_spacing=voxel_spacing,
-        volume_origin=volume_origin,
-        use_gpu=use_gpu,
-        logger=logger,
-    )
+        volume = backproject_gpu(
+            projections=projections,
+            geom=geom,
+            volume_shape=volume_dims,
+            voxel_spacing=voxel_spacing,
+            volume_origin=volume_origin,
+            use_gpu=use_gpu,
+            logger=logger,
+        )
     
     t_elapsed = time.time() - t_start
     

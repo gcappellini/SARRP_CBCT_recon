@@ -248,3 +248,51 @@ def ramp_filter_and_backproject(
     else:
         return backproject(proj_filt, geom, volume_shape, voxel_spacing, volume_origin, logger=logger)
 
+
+def make_cpu_projection_provider(projections: np.ndarray, du: float):
+    """Create a CPU-only per-angle projection provider.
+
+    The returned callable `get_projection(angle_idx)` returns a single
+    filtered 2D projection (shape: (nu, nv), dtype=float32) computed on
+    the CPU using NumPy FFT along the detector u-axis.
+
+    Parameters
+    ----------
+    projections : ndarray[n_proj, nu, nv]
+        Raw projection stack (unfiltered) in memory.
+    du : float
+        Detector pixel size along u in mm.
+
+    Returns
+    -------
+    get_projection : callable
+        Function taking an integer `angle_idx` and returning a filtered
+        2D NumPy array (nu, nv).
+    """
+
+    if projections.ndim != 3:
+        raise ValueError("projections must be a 3D array with shape (n_proj, nu, nv)")
+
+    n_proj, nu, nv = projections.shape
+
+    # Precompute frequency-domain ramp and window on CPU
+    freqs = np.fft.fftfreq(nu, d=du)
+    ramp = np.abs(freqs)
+    window = np.hamming(nu)
+    ramp_windowed = ramp * window
+
+    def get_projection(angle_idx: int) -> np.ndarray:
+        if angle_idx < 0 or angle_idx >= n_proj:
+            raise IndexError("angle_idx out of range")
+
+        proj = np.asarray(projections[angle_idx], dtype=np.float32)
+
+        # FFT along u (axis=0 for a single projection of shape (nu, nv))
+        F = np.fft.fft(proj, axis=0)
+        F_filtered = F * ramp_windowed.reshape(nu, 1)
+        filtered = np.fft.ifft(F_filtered, axis=0).real
+
+        return filtered.astype(np.float32)
+
+    return get_projection
+
