@@ -5,6 +5,7 @@ Apply 1D FFT-based ramp filtering along the detector u-axis before backprojectio
 
 from typing import Callable, Tuple, Optional
 import numpy as np
+from scipy.ndimage import gaussian_filter
 
 try:
     import cupy as cp
@@ -59,7 +60,8 @@ def apply_ramp_filter(
     projections: np.ndarray,
     du: float,
     use_gpu: Optional[bool] = None,
-    window: str = 'shepp-logan'
+    window: str = 'shepp-logan',
+    gaussian_sigma: float = 0.0
 ) -> np.ndarray:
     """
     Apply 1D ramp filter along detector u-axis to all projections.
@@ -75,6 +77,10 @@ def apply_ramp_filter(
         If True, use CuPy FFT. If None, use CuPy if available.
     window : str
         Window type: 'ram-lak', 'shepp-logan', 'hann', 'hamming', 'cosine'.
+    gaussian_sigma : float
+        Gaussian pre-smoothing sigma in pixels. If > 0, applies Gaussian blur
+        to each projection before ramp filtering. Values 0.5-1.0 recommended
+        for edge-preserving noise reduction. Default: 0.0 (no smoothing).
 
     Returns
     -------
@@ -101,6 +107,12 @@ def apply_ramp_filter(
     # --- CPU path (NumPy FFT) ---
     if not use_gpu or not CUPY_AVAILABLE:
         proj_np = np.asarray(projections, dtype=np.float32)
+        
+        # Optional Gaussian pre-smoothing for noise reduction
+        if gaussian_sigma > 0:
+            for i in range(n_proj):
+                proj_np[i] = gaussian_filter(proj_np[i], sigma=gaussian_sigma)
+        
         # FFT along u-axis (axis=-1)
         F = np.fft.fft(proj_np, axis=-1)
         # Multiply by ramp (broadcast over n_proj, nv dimensions)
@@ -113,6 +125,20 @@ def apply_ramp_filter(
     
     try:
         proj_gpu = cp.asarray(projections, dtype=cp.float32)
+        
+        # Optional Gaussian pre-smoothing for noise reduction
+        if gaussian_sigma > 0:
+            try:
+                from cupyx.scipy.ndimage import gaussian_filter as gaussian_filter_gpu
+                for i in range(n_proj):
+                    proj_gpu[i] = gaussian_filter_gpu(proj_gpu[i], sigma=gaussian_sigma)
+            except ImportError:
+                # Fallback to CPU smoothing if cupyx not available
+                proj_cpu = cp.asnumpy(proj_gpu)
+                for i in range(n_proj):
+                    proj_cpu[i] = gaussian_filter(proj_cpu[i], sigma=gaussian_sigma)
+                proj_gpu = cp.asarray(proj_cpu, dtype=cp.float32)
+        
         F = cp.fft.fft(proj_gpu, axis=-1)
         F_filtered = F * ramp_gpu[cp.newaxis, cp.newaxis, :]
         filtered = cp.fft.ifft(F_filtered, axis=-1).real
@@ -120,6 +146,12 @@ def apply_ramp_filter(
     except cp.cuda.memory.OutOfMemoryError:
         # Fallback to CPU
         proj_np = np.asarray(projections, dtype=np.float32)
+        
+        # Optional Gaussian pre-smoothing for noise reduction
+        if gaussian_sigma > 0:
+            for i in range(n_proj):
+                proj_np[i] = gaussian_filter(proj_np[i], sigma=gaussian_sigma)
+        
         F = np.fft.fft(proj_np, axis=-1)
         F_filtered = F * ramp_windowed[np.newaxis, np.newaxis, :]
         filtered = np.fft.ifft(F_filtered, axis=-1).real
@@ -129,7 +161,8 @@ def apply_ramp_filter(
 def make_cpu_projection_provider(
     projections: np.ndarray,
     du: float,
-    window: str = 'shepp-logan'
+    window: str = 'shepp-logan',
+    gaussian_sigma: float = 0.0
 ) -> Callable:
     """
     Create a per-angle CPU projection provider.
@@ -145,6 +178,8 @@ def make_cpu_projection_provider(
         Detector pixel size along u in mm.
     window : str
         Window type.
+    gaussian_sigma : float
+        Gaussian pre-smoothing sigma in pixels (0.0 = no smoothing).
 
     Returns
     -------
@@ -167,6 +202,11 @@ def make_cpu_projection_provider(
             raise IndexError(f"angle_idx {angle_idx} out of range [0, {n_proj})")
         
         proj = np.asarray(projections[angle_idx], dtype=np.float32)  # shape: (nv, nu)
+        
+        # Optional Gaussian pre-smoothing for noise reduction
+        if gaussian_sigma > 0:
+            proj = gaussian_filter(proj, sigma=gaussian_sigma)
+        
         # FFT along u-axis (axis=-1)
         F = np.fft.fft(proj, axis=-1)
         F_filtered = F * ramp_windowed[np.newaxis, :]
@@ -182,7 +222,8 @@ def ramp_filter_and_backproject(
     volume_shape: Tuple[int, int, int],
     voxel_spacing: Tuple[float, float, float],
     volume_origin: Tuple[float, float, float],
-    window: str = 'shepp-logan'
+    window: str = 'shepp-logan',
+    gaussian_sigma: float = 0.0
 ) -> np.ndarray:
     """
     Apply ramp filter to projections and backproject.
@@ -201,6 +242,8 @@ def ramp_filter_and_backproject(
         (ox, oy, oz)
     window : str
         Window type for ramp filter.
+    gaussian_sigma : float
+        Gaussian pre-smoothing sigma in pixels (0.0 = no smoothing).
 
     Returns
     -------
@@ -210,5 +253,5 @@ def ramp_filter_and_backproject(
     from backproject import backproject
 
     du = float(geom.det_pixel_size[0])
-    proj_filt = apply_ramp_filter(projections, du, use_gpu=False, window=window)
+    proj_filt = apply_ramp_filter(projections, du, use_gpu=False, window=window, gaussian_sigma=gaussian_sigma)
     return backproject(proj_filt, geom, volume_shape, voxel_spacing, volume_origin)
