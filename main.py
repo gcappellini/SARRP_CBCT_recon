@@ -313,8 +313,8 @@ def main():
         logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
         # Create a CPU-only per-angle provider that filters a single projection on request
         from preprocessing import make_cpu_projection_provider
-, window=args.filter_window
-        provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0])
+        window=args.filter_window
+        provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0], window=window)
 
         volume = backproject_gpu(
             projections=provider,
