@@ -10,6 +10,14 @@ import logging
 import time
 from pathlib import Path
 
+# Configure matplotlib before importing pyplot
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans']  # Use simple font
+# Suppress matplotlib's debug logging
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
 import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk

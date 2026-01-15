@@ -9,6 +9,14 @@ import logging
 import time
 from pathlib import Path
 
+# Configure matplotlib before importing pyplot
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans']  # Use simple font
+# Suppress matplotlib's debug logging
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
 import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
@@ -16,6 +24,7 @@ import yaml
 
 from geometry import load_geometry_from_yaml
 from gpu_ops import backproject_gpu, CUPY_AVAILABLE
+from preprocessing import apply_ramp_filter
 
 
 def setup_logging(output_dir: Path):
@@ -288,7 +297,11 @@ def main():
     logger.info(f"  Total voxels to process: {volume_dims[0] * volume_dims[1] * volume_dims[2]:,}")
     
     t_start = time.time()
-    
+
+    # Preprocess: apply 1D ramp (Ram-Lak) filter along detector u-axis
+    logger.info("  Applying Ramp (Ram-Lak) filter to projections...")
+    projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=use_gpu)
+
     volume = backproject_gpu(
         projections=projections,
         geom=geom,
