@@ -302,6 +302,17 @@ def main():
     logger.info("  Applying Ramp (Ram-Lak) filter to projections...")
     projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=use_gpu)
 
+    # Validate filtered projections shape
+    try:
+        ndim = projections.ndim
+    except Exception:
+        logger.error("Filtered projections object has no ndim attribute")
+        raise
+
+    if ndim != 3:
+        logger.error(f"Filtered projections must be 3D (n_proj, nu, nv), got ndim={ndim}")
+        raise ValueError("Filtered projections must be 3D (n_proj, nu, nv)")
+
     volume = backproject_gpu(
         projections=projections,
         geom=geom,

@@ -138,6 +138,13 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
     # Axis 1 is detector u-axis (nu)
     n_proj, nu, nv = projections.shape
 
+    # Handle empty projection stack gracefully
+    if n_proj == 0:
+        if use_gpu and CUPY_AVAILABLE:
+            return cp.empty((0, nu, nv), dtype=cp.float32)
+        else:
+            return np.empty((0, nu, nv), dtype=np.float32)
+
     if use_gpu and CUPY_AVAILABLE:
         xp = cp
 
@@ -180,6 +187,8 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
 
                 out_chunks.append(filtered_gpu)
 
+            if len(out_chunks) == 0:
+                return xp.empty((0, nu, nv), dtype=xp.float32)
             if len(out_chunks) == 1:
                 return out_chunks[0]
             else:
