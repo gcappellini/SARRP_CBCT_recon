@@ -102,7 +102,59 @@ except Exception:
 from backproject import backproject
 
 
-def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool] = None) -> np.ndarray:
+def _compute_window(n: int, window_type: str, xp):
+    """
+    Compute window function for ramp filter in frequency domain.
+    
+    Parameters
+    ----------
+    n : int
+        Number of samples (detector width).
+    window_type : str
+        Window type name.
+    xp : module
+        NumPy or CuPy module.
+    
+    Returns
+    -------
+    window : array[n,]
+        Window values in frequency domain.
+    """
+    window_type = window_type.lower()
+    
+    if window_type in ['ram-lak', 'none']:
+        return xp.ones(n, dtype=xp.float32)
+    
+    # Create normalized frequency array [0, 1] for positive frequencies
+    # and mirror for negative frequencies
+    freqs = xp.fft.fftfreq(n)
+    omega = xp.abs(freqs) * 2  # Normalized to [0, 1] at Nyquist
+    
+    if window_type == 'shepp-logan':
+        # Shepp-Logan: sinc function
+        # w(ω) = sinc(ω/2) = sin(πω/2) / (πω/2)
+        window = xp.sinc(omega / 2)
+    
+    elif window_type == 'cosine':
+        # Cosine window: cos(πω/2) for ω in [0,1]
+        window = xp.cos(omega * xp.pi / 2)
+    
+    elif window_type == 'hamming':
+        # Hamming: 0.54 + 0.46*cos(πω)
+        window = 0.54 + 0.46 * xp.cos(omega * xp.pi)
+    
+    elif window_type == 'hann':
+        # Hann: cos²(πω/2) = (1 + cos(πω))/2
+        window = (1 + xp.cos(omega * xp.pi)) / 2
+    
+    else:
+        raise ValueError(f"Unknown window type: {window_type}. "
+                        f"Use 'ram-lak', 'shepp-logan', 'cosine', 'hamming', or 'hann'")
+    
+    return window.astype(xp.float32)
+
+
+def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool] = None, window: str = 'shepp-logan') -> np.ndarray:
     """Apply a 1D ramp filter along the detector u-axis to all projections.
 
     This function will use CuPy FFT when `use_gpu=True` and CuPy is available.
@@ -119,6 +171,14 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
     use_gpu : bool or None
         If True, attempt to use CuPy for FFTs. If False, force NumPy.
         If None (default), use CuPy when available.
+    window : str
+        Window type for ramp filter. Options:
+        - 'ram-lak' or 'none': No window (sharpest, noisiest)
+        - 'shepp-logan': Moderate smoothing (recommended default)
+        - 'hann': More smoothing
+        - 'hamming': Similar to Hann
+        - 'cosine': Moderate smoothing
+        Default: 'shepp-logan'
 
     Returns
     -------
@@ -151,9 +211,13 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
         # Prepare GPU-side filter arrays once
         freqs = xp.fft.fftfreq(nu, d=du)
         ramp = xp.abs(freqs)
+        
+        # Apply window function
+        w = _compute_window(nu, window, xp)
+        
         # Scale ramp filter properly for FBP reconstruction
         # Factor of 2 accounts for integration over projection angles
-        ramp_windowed = ramp * (2.0 * du)
+        ramp_windowed = ramp * w * (2.0 * du)
 
         # Estimate available GPU memory and process in batches to avoid OOM
         try:
@@ -199,15 +263,22 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
             # Convert to NumPy and reuse CPU implementation below
             projections = np.asarray(projections, dtype=np.float32)
             use_gpu = False
-            # fall through to CPU branch
-    else:
-        xp = np
-        proj_np = np.asarray(projections, dtype=np.float32)
+            # fall through to CPU branch, window: str = 'shepp-logan'):
+    """Create a CPU-only per-angle projection provider.
 
-        freqs = np.fft.fftfreq(nu, d=du)
-        ramp = np.abs(freqs)
-        # Scale ramp filter properly for FBP reconstruction
-        # Factor of 2 accounts for integration over projection angles
+    The returned callable `get_projection(angle_idx)` returns a single
+    filtered 2D projection (shape: (nu, nv), dtype=float32) computed on
+    the CPU using NumPy FFT along the detector u-axis.
+
+    Parameters
+    ----------
+    projections : ndarray[n_proj, nu, nv]
+        Raw projection stack (unfiltered) in memory.
+    du : float
+        Detector pixel size along u in mm.
+    window : str
+        Window type for ramp filter ('ram-lak', 'shepp-logan', 'hann', 'hamming', 'cosine').
+        Default: 'shepp-logan'tion over projection angles
         ramp_windowed = ramp * (2.0 * du)
 
         F = np.fft.fft(proj_np, axis=1)
@@ -221,9 +292,7 @@ def ramp_filter_and_backproject(
     projections: np.ndarray,
     geom,
     volume_shape: Tuple[int, int, int],
-    voxel_spacing: Tuple[float, float, float],
-    volume_origin: Tuple[float, float, float],
-    use_gpu: Optional[bool] = None,
+    window: str = 'shepp-logan',
     logger=None,
 ) -> np.ndarray:
     """Apply ramp filter to projections and call `backproject`.
@@ -233,6 +302,13 @@ def ramp_filter_and_backproject(
     is the u-axis pixel size in mm.
     """
 
+    # Extract detector u pixel size from geometry
+    try:
+        du = float(geom.det_pixel_size[0])
+    except Exception as e:
+        raise ValueError("Could not read detector pixel size from geom.det_pixel_size") from e
+
+    proj_filt = apply_ramp_filter(projections, du, use_gpu=use_gpu, window=window
     # Extract detector u pixel size from geometry
     try:
         du = float(geom.det_pixel_size[0])

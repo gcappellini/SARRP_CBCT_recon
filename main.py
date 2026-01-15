@@ -224,6 +224,15 @@ def main():
         action="store_true",
         help="Use CPU instead of GPU",
     )
+    parser.add_argument(
+        "--filter-window",
+        type=str,
+        default="shepp-logan",
+        choices=["ram-lak", "none", "shepp-logan", "cosine", "hamming", "hann"],
+        help="Ramp filter window type (default: shepp-logan). "
+             "Options: ram-lak/none (sharpest, noisiest), shepp-logan (balanced), "
+             "cosine, hamming, hann (smoothest)",
+    )
     
     args = parser.parse_args()
     
@@ -272,6 +281,7 @@ def main():
     logger.info(f"  Projections: {geom.n_projections} angles from {geom.angle_start_deg}° to {geom.angle_end_deg}°")
     logger.info(f"  Volume: {volume_dims} voxels, spacing={voxel_spacing} mm")
     logger.info(f"  Volume origin: {volume_origin} mm")
+    logger.info(f"  Ramp filter window: {args.filter_window}")
     logger.info(f"  Step 1 completed in {time.time() - t_step_start:.2f}s")
     logger.info("")
     
@@ -303,7 +313,7 @@ def main():
         logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
         # Create a CPU-only per-angle provider that filters a single projection on request
         from preprocessing import make_cpu_projection_provider
-
+, window=args.filter_window
         provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0])
 
         volume = backproject_gpu(
@@ -319,7 +329,7 @@ def main():
     else:
         # CPU-only path: filter entire stack on CPU and run CPU backproject (no GPU)
         logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
-        projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False)
+        projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False, window=args.filter_window)
 
         volume = backproject_gpu(
             projections=projections,
