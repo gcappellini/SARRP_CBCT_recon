@@ -151,8 +151,9 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
         # Prepare GPU-side filter arrays once
         freqs = xp.fft.fftfreq(nu, d=du)
         ramp = xp.abs(freqs)
-        window = xp.hamming(nu)
-        ramp_windowed = ramp * window
+        # Scale ramp filter properly for FBP reconstruction
+        # Factor of 2 accounts for integration over projection angles
+        ramp_windowed = ramp * (2.0 * du)
 
         # Estimate available GPU memory and process in batches to avoid OOM
         try:
@@ -205,8 +206,9 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
 
         freqs = np.fft.fftfreq(nu, d=du)
         ramp = np.abs(freqs)
-        window = np.hamming(nu)
-        ramp_windowed = ramp * window
+        # Scale ramp filter properly for FBP reconstruction
+        # Factor of 2 accounts for integration over projection angles
+        ramp_windowed = ramp * (2.0 * du)
 
         F = np.fft.fft(proj_np, axis=1)
         F_filtered = F * ramp_windowed.reshape(1, nu, 1)
@@ -278,8 +280,9 @@ def make_cpu_projection_provider(projections: np.ndarray, du: float):
     # Precompute frequency-domain ramp and window on CPU
     freqs = np.fft.fftfreq(nu, d=du)
     ramp = np.abs(freqs)
-    window = np.hamming(nu)
-    ramp_windowed = ramp * window
+    # Scale ramp filter properly for FBP reconstruction
+    # Factor of 2 accounts for integration over projection angles
+    ramp_windowed = ramp * (2.0 * du)
 
     def get_projection(angle_idx: int) -> np.ndarray:
         if angle_idx < 0 or angle_idx >= n_proj:
