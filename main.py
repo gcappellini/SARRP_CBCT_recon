@@ -24,7 +24,7 @@ import yaml
 
 from geometry import load_geometry_from_yaml
 from gpu_ops import backproject_gpu, CUPY_AVAILABLE
-from preprocessing import apply_ramp_filter
+# from preprocessing import apply_ramp_filter
 
 
 def setup_logging(output_dir: Path):
@@ -302,12 +302,13 @@ def main():
     if use_gpu:
         logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
         # Create a CPU-only per-angle provider that filters a single projection on request
-        from preprocessing import make_cpu_projection_provider
+        # from preprocessing import make_cpu_projection_provider
 
-        provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0])
+        # provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0])
 
         volume = backproject_gpu(
-            projections=provider,
+            # projections=provider,
+            projections=projections,
             geom=geom,
             volume_shape=volume_dims,
             voxel_spacing=voxel_spacing,
@@ -317,8 +318,8 @@ def main():
         )
     else:
         # CPU-only path: filter entire stack on CPU and run CPU backproject (no GPU)
-        logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
-        projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False)
+        # logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
+        # projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False)
 
         volume = backproject_gpu(
             projections=projections,
