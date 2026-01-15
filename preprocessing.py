@@ -140,20 +140,56 @@ def apply_ramp_filter(projections: np.ndarray, du: float, use_gpu: Optional[bool
 
     if use_gpu and CUPY_AVAILABLE:
         xp = cp
-        proj_gpu = cp.asarray(projections, dtype=cp.float32)
 
-        # Frequency sampling along u (cycles per mm)
+        # Prepare GPU-side filter arrays once
         freqs = xp.fft.fftfreq(nu, d=du)
         ramp = xp.abs(freqs)
         window = xp.hamming(nu)
         ramp_windowed = ramp * window
 
-        # FFT along u (axis=1)
-        F = xp.fft.fft(proj_gpu, axis=1)
-        F_filtered = F * ramp_windowed.reshape(1, nu, 1)
-        filtered_gpu = xp.fft.ifft(F_filtered, axis=1).real
+        # Estimate available GPU memory and process in batches to avoid OOM
+        try:
+            free_bytes, total_bytes = cp.cuda.runtime.memGetInfo()
+        except Exception:
+            free_bytes = None
 
-        return filtered_gpu
+        # Conservative estimate: complex64 (8 bytes) per element and extra overhead
+        bytes_per_elem = 8
+        overhead_factor = 3  # account for temporaries
+
+        per_proj_bytes = int(nu * nv * bytes_per_elem * overhead_factor)
+
+        if free_bytes is None or per_proj_bytes == 0:
+            batch_size = 1
+        else:
+            batch_size = max(1, min(n_proj, int(free_bytes / per_proj_bytes)))
+
+        # Ensure at least one projection per batch
+        batch_size = max(1, batch_size)
+
+        out_chunks = []
+        try:
+            for i in range(0, n_proj, batch_size):
+                j = min(n_proj, i + batch_size)
+                proj_gpu_batch = cp.asarray(projections[i:j], dtype=cp.float32)
+
+                # FFT along u (axis=1)
+                F = xp.fft.fft(proj_gpu_batch, axis=1)
+                F_filtered = F * ramp_windowed.reshape(1, nu, 1)
+                filtered_gpu = xp.fft.ifft(F_filtered, axis=1).real
+
+                out_chunks.append(filtered_gpu)
+
+            if len(out_chunks) == 1:
+                return out_chunks[0]
+            else:
+                return xp.concatenate(out_chunks, axis=0)
+        except cp.cuda.memory.OutOfMemoryError:
+            # Fallback: perform filtering on CPU to avoid repeated OOMs
+            # Convert to NumPy and reuse CPU implementation below
+            projections = np.asarray(projections, dtype=np.float32)
+            use_gpu = False
+            # fall through to CPU branch
     else:
         xp = np
         proj_np = np.asarray(projections, dtype=np.float32)
