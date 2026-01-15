@@ -50,8 +50,8 @@ projections.mhd
 *.raw
 *.mhd
 
-output_1001/*.raw
-output_1001/*.mhd
+# output_1001/*.raw
+# output_1001/*.mhd
 
-output_wrong_preproc/*.raw
-output_wrong_preproc/*.mhd
+output_*/*.raw
+output_*/*.mhd
