@@ -228,10 +228,10 @@ def main():
         "--filter-window",
         type=str,
         default="shepp-logan",
-        choices=["ram-lak", "none", "shepp-logan", "cosine", "hamming", "hann"],
+        choices=["ram-lak", "none", "shepp-logan", "cosine", "hamming", "hann", "skip"],
         help="Ramp filter window type (default: shepp-logan). "
              "Options: ram-lak/none (sharpest, noisiest), shepp-logan (balanced), "
-             "cosine, hamming, hann (smoothest)",
+             "cosine, hamming, hann (smoothest), skip (no ramp filter, Gaussian only)",
     )
     parser.add_argument(
         "--gaussian-sigma",
@@ -319,26 +319,53 @@ def main():
 
     # If using GPU for backprojection, stream CPU-filtered projections per-angle
     if use_gpu:
-        logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
-        # Create a CPU-only per-angle provider that filters a single projection on request
-        from preprocessing import make_cpu_projection_provider
-        window=args.filter_window
-        provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0], window=window, gaussian_sigma=args.gaussian_sigma)
+        if args.filter_window == 'skip':
+            # Skip ramp filter, apply only Gaussian smoothing if requested
+            logger.info("  Skipping ramp filter (Gaussian smoothing only)")
+            if args.gaussian_sigma > 0:
+                logger.info(f"  Applying Gaussian blur (sigma={args.gaussian_sigma}) to projections...")
+                from scipy.ndimage import gaussian_filter
+                for i in range(projections.shape[0]):
+                    projections[i] = gaussian_filter(projections[i], sigma=args.gaussian_sigma)
+            volume = backproject_gpu(
+                projections=projections,
+                geom=geom,
+                volume_shape=volume_dims,
+                voxel_spacing=voxel_spacing,
+                volume_origin=volume_origin,
+                use_gpu=use_gpu,
+                logger=logger,
+            )
+        else:
+            logger.info("  Using GPU backprojector with CPU-side per-angle filtering (streaming)")
+            # Create a CPU-only per-angle provider that filters a single projection on request
+            from preprocessing import make_cpu_projection_provider
+            window=args.filter_window
+            provider = make_cpu_projection_provider(projections, geom.det_pixel_size[0], window=window, gaussian_sigma=args.gaussian_sigma)
 
-        volume = backproject_gpu(
-            projections=provider,
-            # projections=projections,
-            geom=geom,
-            volume_shape=volume_dims,
-            voxel_spacing=voxel_spacing,
-            volume_origin=volume_origin,
-            use_gpu=use_gpu,
-            logger=logger,
-        )
+            volume = backproject_gpu(
+                projections=provider,
+                # projections=projections,
+                geom=geom,
+                volume_shape=volume_dims,
+                voxel_spacing=voxel_spacing,
+                volume_origin=volume_origin,
+                use_gpu=use_gpu,
+                logger=logger,
+            )
     else:
-        # CPU-only path: filter entire stack on CPU and run CPU backproject (no GPU)
-        logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
-        projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False, window=args.filter_window, gaussian_sigma=args.gaussian_sigma)
+        if args.filter_window == 'skip':
+            # Skip ramp filter, apply only Gaussian smoothing if requested
+            logger.info("  Skipping ramp filter (Gaussian smoothing only)")
+            if args.gaussian_sigma > 0:
+                logger.info(f"  Applying Gaussian blur (sigma={args.gaussian_sigma}) to projections...")
+                from scipy.ndimage import gaussian_filter
+                for i in range(projections.shape[0]):
+                    projections[i] = gaussian_filter(projections[i], sigma=args.gaussian_sigma)
+        else:
+            # CPU-only path: filter entire stack on CPU and run CPU backproject (no GPU)
+            logger.info("  Applying Ramp (Ram-Lak) filter to full projection stack on CPU...")
+            projections = apply_ramp_filter(projections, geom.det_pixel_size[0], use_gpu=False, window=args.filter_window, gaussian_sigma=args.gaussian_sigma)
 
         volume = backproject_gpu(
             projections=projections,
