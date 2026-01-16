@@ -38,9 +38,6 @@ checkpoints/
 .DS_Store
 Thumbs.db
 
-# Test outputs
-smoke_*.png
-config_test.yaml
 
 # Large data files (>2GB, exceeds GitHub LFS limit)
 # Store these externally (Zenodo, institutional repository, etc.)
@@ -53,5 +50,5 @@ projections.mhd
 # output_1001/*.raw
 # output_1001/*.mhd
 
-output_*/*.raw
-output_*/*.mhd
+tests/output_*/*.raw
+tests/output_*/*.mhd

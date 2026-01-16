@@ -1,0 +1,26 @@
+COR offset (mm): -1.032 -2.285 0
+CTilt: 0 0 -0.708352 0.705859
+Isocenter-to-Detector Distance IDD (mm): 263.609
+Source-to-Detector Distance SDD (mm): 616.875
+Source-to-Isocenter Distance SID (mm): 353.266
+angular end (degrees): 360
+angular start (degrees): 0
+detector pixel counts: 256 256
+detector reference point (mm): 102.4 102.4 263.609
+number of projections: 60
+physical detector size (mm): 204.8 204.8
+rotation axis direction: 0 1 0
+source position relative to isocenter (mm): 0 0 -353.266
+volume:
+  origin:
+  - -12.8
+  - -12.8
+  - -12.8
+  shape:
+  - 64
+  - 64
+  - 64
+  voxel_spacing:
+  - 0.4
+  - 0.4
+  - 0.4

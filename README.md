@@ -4,7 +4,7 @@ GPU-accelerated cone-beam CT reconstruction for Small Animal Radiation Research 
 
 ## Features
 
-- **Geometry handling**: Full SARRP geometry specification from calibration files
+- **Geometry handling**: Full SARRP geometry specification from config files
 - **CPU implementation**: Reference implementation with NumPy
 - **GPU acceleration**: CuPy-based GPU implementation for ~50-100x speedup
 - **Voxel-driven backprojection**: Efficient reconstruction algorithm
@@ -90,14 +90,7 @@ The reconstruction produces:
 
 ## Performance
 
-On a modern GPU (e.g., RTX 4090), full reconstruction of 1440 projections (1024×1024) into a 271×438×438 volume takes approximately:
-
-- **GPU**: ~30-60 seconds
-- **CPU**: ~30-60 minutes
-
-## License
-
-MIT License
+On a modern GPU (e.g., RTX 4090), full reconstruction of 1440 projections (1024×1024) into a 271×438×438 volume takes approximately 5 mins.
 
 ## Contact
 
