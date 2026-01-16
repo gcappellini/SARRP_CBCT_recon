@@ -8,10 +8,10 @@
 "number of projections": 1440
 "trajectory type": linear
 "CTilt": 0 0 -0.708352 0.705859
-"COR offset (mm)": -1.024 -0.001 0
+"COR offset (mm)": -1.032 -2.285 0
 "voxel spacing (mm)": 0.26 0.26 0.26
 "volume dimensions (voxels)": 271 438 438
-"rotation axis direction": 0 1 0
+"rotation axis direction": -0.00352549 -0.999994 0
 "piercing point offset in detector coordinates": 0 0 / 0 0
 "Source-to-Detector Distance SDD (mm)": 634.0
 "Source-to-Isocenter Distance SID (mm)": 353.266
