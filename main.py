@@ -276,18 +276,20 @@ def main():
     # Extract volume parameters
     voxel_spacing = tuple(map(float, config["voxel spacing (mm)"].split()))
     volume_dims = tuple(map(int, config["volume dimensions (voxels)"].split()))
+    volume_center = tuple(map(float, config.get("volume center (mm)", "0 0 0").split()))
     
     # Calculate volume origin to center it around isocenter
     volume_origin = (
-        -volume_dims[0] * voxel_spacing[0] / 2,
-        -volume_dims[1] * voxel_spacing[1] / 2,
-        -volume_dims[2] * voxel_spacing[2] / 2,
+        volume_center[0] - volume_dims[0] * voxel_spacing[0] / 2,
+        volume_center[1] - volume_dims[1] * voxel_spacing[1] / 2,
+        volume_center[2] - volume_dims[2] * voxel_spacing[2] / 2,
     )
     
     logger.info(f"  Geometry: SOD={geom.SOD:.2f} mm, SDD={geom.SDD:.2f} mm, IDD={geom.IDD:.2f} mm")
     logger.info(f"  Detector: {geom.det_nu} × {geom.det_nv} pixels")
     logger.info(f"  Projections: {geom.n_projections} angles from {geom.angle_start_deg}° to {geom.angle_end_deg}°")
     logger.info(f"  Volume: {volume_dims} voxels, spacing={voxel_spacing} mm")
+    logger.info(f"  Volume center: {volume_center} mm")
     logger.info(f"  Volume origin: {volume_origin} mm")
     logger.info(f"  Ramp filter window: {args.filter_window}")
     logger.info(f"  Gaussian pre-smoothing sigma: {args.gaussian_sigma} pixels")
